@@ -1,0 +1,13 @@
+{
+  "name": "friday-lunch",
+  "version": "0.0.0",
+  "description": "A program to chat and vote for lunch. Winner is randomly selected at the set time.",
+  "main": "server.js",
+  "repository": "",
+  "author": "TheDruidsKeeper",
+  "dependencies": {
+    "async": "~0.2.8",
+    "express": "~3.2.4",
+    "socket.io": "~0.9.14"
+  }
+}
