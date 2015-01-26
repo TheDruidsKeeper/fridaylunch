@@ -1,3 +1,29 @@
-body {
-    padding-top: 60px;
+#bg {
+  position: fixed; 
+  top: -50%; 
+  left: -50%; 
+  width: 200%; 
+  height: 200%;
+}
+#bg img {
+  position: absolute; 
+  top: 0; 
+  left: 0; 
+  right: 0; 
+  bottom: 0; 
+  margin: auto; 
+  min-width: 50%;
+  min-height: 50%;
+}
+#chatWindow{
+    height: 60vh;
+    overflow-x:hidden;
+}
+#winnerTable{
+  height: 400px;
+  overflow: scroll;
+}
+#winnerTable1{
+  height: 400px;
+  overflow: scroll;
 }
