@@ -19,17 +19,20 @@ var router = express();
 var server = http.createServer(router);
 var io = socketio.listen(server);
 
-/*
 //  User
 function User(){
-  var _name = "";
-  this.getName = function() { return _name; };
+  var _token = "";
+  var _ID = null;
+  this.getToken = function() { return _token; };
   this.findOrCreate = function(args, callback) {
-    _name = args.name;
+    forEach()
+    _token = args.token;
+    _ID = users.length;
     return this;
   };
 }
 
+/*
 var currentUser = new User().findOrCreate({name : "test user"});
 console.log(currentUser.getName());
 var otherUser = new User().findOrCreate({name : "other test user"});
@@ -124,6 +127,9 @@ var locations = [{
   name: "La Carreta Peruvian Restaurant",
   phone: "(801) 229-2696"
 }, {
+  name: "JCW's",
+  phone: "(801) 374-5297"
+}, {
   name: "Maria Bonita",
   phone: "(801) 426-9328"
 }, {
@@ -181,7 +187,7 @@ var locations = [{
   name: "Zupas",
   phone: "(801) 377-7687"
 }];
-var loggedIn = null;
+var users = [];
 
 // Web Sockets
 io.on('connection', function(socket) {
@@ -204,11 +210,23 @@ io.on('connection', function(socket) {
         data.location = submission.location;
         foundSumission = true;
       }
+      if(!submission.name || submission.name==''){
+        submission.splice(this,1);
+      }
     });
     if (!foundSumission) {
       submissions.push(submission);
       console.log('Added new submission');
     }
+    submissions.clean = function(deleteValue){
+      for(var i=0; i < this.length; i++){
+        if(this[i].name == deleteValue || this[i].location == deleteValue){
+          this.splice(i,1);
+          i--;
+        }
+      }
+    };
+    submissions.clean(undefined);
     broadcast('submissions', submissions);
   });
 
@@ -237,6 +255,9 @@ io.on('connection', function(socket) {
             return;
           case '/resetMessages':
             messages = [];
+            messages.forEach(function(data) {
+              socket.emit('message', data);
+            });
             return;
           case '/resetWinner':
             ClearWinner();
@@ -318,6 +339,15 @@ var jobScheduler = {
 };
 
 function SelectWinner(){
+  submissions.clean = function(deleteValue){
+      for(var i=0; i < this.length; i++){
+        if(this[i].name == deleteValue || this[i].location == deleteValue){
+          this.splice(i,1);
+          i--;
+        }
+      }
+    };
+    submissions.clean(undefined);
   console.log((new Date()).toUTCString() + ': Winner job triggered');
   if (submissions.length === 0) {
     console.log("no submissions");
