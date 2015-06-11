@@ -1,5 +1,3 @@
-// on load we want to find out what day it is, if it is friday, display .container
-// if it is not friday we could display a countdown to friday. along with the button for past winners
 function onSignInCallback(authResult) {
     if (authResult['status']['signed_in']) {
         // Update the app to reflect a signed in user
@@ -8,6 +6,7 @@ function onSignInCallback(authResult) {
         gapi.client.plus.people.get({
             userId: 'me'
         }).execute(handleEmailResponse);
+        angular.element('[ng-controller=LunchController]').scope().signInState = true;
     }
     else {
         console.log('Sign-in state: ' + authResult['error']);
@@ -18,406 +17,258 @@ function apiClientLoaded() {
     gapi.client.load('plus', 'v1');
 }
 
+$('.color-black, .color-red, .color-green').click(function() {
+    this.className = {
+        black: 'color-red',
+        red: 'color-green',
+        green: 'color-black'
+    }[this.className];
+});
+
 function handleEmailResponse(resp) {
-    angular.element('[ng-controller=LunchController]').scope().user=resp.displayName;
-    angular.element('[ng-controller=LunchController]').scope().$apply();
+    //set the user ID, user Token, User FirstName, and User lastName
+    var scope = angular.element('[ng-controller=LunchController]').scope();
+    scope.$broadcast("userAuth", {
+        first_name: resp.name.givenName,
+        last_name: resp.name.familyName,
+        token: resp.etag,
+        display_name: resp.displayName
+    });
+    scope.$apply();
 }
-
-//Script to find out what day it is
-function dayFinder() {
-    var d = new Date();
-    var weekday = new Array(7);
-    weekday[0] = "Sunday";
-    weekday[1] = "Monday";
-    weekday[2] = "Tuesday";
-    weekday[3] = "Wednesday";
-    weekday[4] = "Thursday";
-    weekday[5] = "Friday";
-    weekday[6] = "Saturday";
-
-    var n = weekday[d.getDay()];
-    //d = 5;
-    if (d !== 5) {
-        document.getElementById("day").innerHTML = (n + " Lunch?");
-        document.getElementById("message").innerHTML = ("Um... today is " + n + ", you are on your own today.");
-        var form = document.getElementById("form");
-        form.style.display = 'none';
-    }
-    else {
-        var int1 = setInterval(function() {
-                var currentHour = new Date().getHours();
-                var currentMin = new Date().getMinutes();
-                var currentSec = new Date().getSeconds();
-                if (currentMin < 10)
-                    currentMin = ("0" + currentMin);
-                if (currentSec < 10)
-                    currentSec = ("0" + currentSec);
-                $('#cd').html(currentHour + ":" + currentMin + ":" + currentSec);
-                document.getElementById("day").innerHTML = (n + " Lunch!");
-                document.getElementById("message").innerHTML = ("Each person may input ONE suggestion for a Friday Lunch location. Suggestions may be changed, but all suggestions must be submitted BEFORE the specified time or they will not be counted. Once all suggestions are in, a random suggestion will automatically be drawn at 10:55 AM.");
-                var pastWinnerButton = document.getElementById("nonFriday");
-                pastWinnerButton.style.display = 'none';
-            }, 500); //check time on 1s
-    }
-}
-
 var lunchApp = angular.module('lunchApp', []);
 
-lunchApp.controller('LunchController', ['$scope', '$timeout',
-    function($scope, $timeout) {
-        $scope.winner = null;
-        $scope.location = '';
-        $scope.messages = [];
-        $scope.roster = [];
-        $scope.submissions = [];
-        $scope.name = localStorage["chat.name"] || "";
+lunchApp.controller('LunchController', ['$scope', '$interval', '$timeout', '$http', function($scope, $interval, $timeout, $http) {
+    $scope.IsFriday = true; //(new Date()).getDay() == 5;
+    $scope.edit = false;
+    $scope.AdminSection = 'Winners';
+    $scope.winner = null;
+    $scope.location = '';
+    $scope.messages = [];
+    $scope.roster = [];
+    $scope.submissions = [];
+    $scope.name = "";
+    $scope.user = {};
+    $scope.countD = "";
+    $scope.text = '';
+    $scope.signInState = false;
+    var socket = io.connect();
+    $scope.locations = null;
+    $scope.$on("userAuth", function(event, args) {
+        $scope.user.display_name = args.display_name;
+        $scope.user.last_name = args.last_name;
+        $scope.user.first_name = args.first_name;
+        $scope.user.token = args.token;
+        $http.post("/users", $scope.user)
+            .then(function(response) {
+                    // success
+                },
+                function(response) { // optional
+                    // failed
+                    console.log(response + "failed");
+                }
+            );
+    });
+    $http.get("../winners.json")
+        .then(function(response) {
+            var winnerData = response.data;
+            $.each(winnerData, function(index, value) {
+                value.date = new Date(value.date);
+            });
+            $scope.winners = winnerData;
+        });
+
+    // Socket event handlers
+    socket.on('connect', function() {
+        $scope.setName();
+    });
+    socket.on('locations', function(locationsArray) {
+        $scope.locations = locationsArray;
+        $scope.$apply();
+        $timeout(function() {
+            $('.combobox').combobox();
+        });
+    });
+    socket.on('message', function(msg) {
+        $scope.messages.push(msg);
+        $scope.$apply();
+        $('#chatWindow').animate({
+            scrollTop: $('#chatWindow')[0].scrollHeight
+        });
+    });
+    socket.on('roster', function(names) {
+        $scope.roster = names;
+        $scope.$apply();
+    });
+    socket.on('submissions', function(sub) {
+        $scope.submissions = sub;
+        $scope.$apply();
+    });
+    socket.on('winner', function(winner) {
+        $scope.winner = winner;
+        console.log(winner);
+        $scope.$apply();
+    });
+    // Scope actions
+    $scope.getImageNbr = function() {
+        var num = Math.floor((Math.random() * 7)); //img dimensions 1300 x 866ish
+        var img = "img/pic" + num + ".jpg";
+        $('#backgrnd').attr('src', img);
+    };
+    $scope.submitLocation = function() {
+        var sub = {
+            name: $scope.user.display_name,
+            location: $scope.location
+        };
+        socket.emit('submission', sub);
+        console.log("Submission sent: " + sub.location);
+    };
+    $scope.send = function send() {
+        console.log('Sending message:', $scope.text);
+        socket.emit('message', $scope.text);
         $scope.text = '';
-        var socket = io.connect();
-        $scope.locations = [];
-        $scope.winners = [{
-            location: "Goodwood",
-            name: "Elissa",
-            participants: "21",
-            date: new Date("January 23, 2015")
-        },{
-            location: "Cafe Rio",
-            name: "",
-            participants: "",
-            date: new Date("January 16, 2015")
-        },{
-            location: "JCW's",
-            name: "",
-            participants: "",
-            date: new Date("January 9, 2015")
-        },{
-            location: "California Pizza Kitchen",
-            name: "Elyse",
-            participants: "",
-            date: new Date("January 2, 2015")
-        },{
-            location: "Cafe Rio",
-            name: "",
-            participants: "12",
-            date: new Date("December 19, 2014")
-        }, {
-            location: "Olive Garden",
-            name: "Melissa",
-            participants: "10",
-            date: new Date("December 12, 2014")
-        }, {
-            location: "iHop",
-            name: "Elissa",
-            participants: "11",
-            date: new Date("December 05, 2014")
-        }, {
-            location: "Zupas",
-            name: "Katie",
-            participants: "13",
-            date: new Date("November 21, 2014")
-        }, {
-            location: "Goodwood",
-            name: "Jacob",
-            participants: "14",
-            date: new Date("November 14, 2014")
-        }, {
-            location: "Mi Ranchito",
-            name: "Elyse",
-            participants: "12",
-            date: new Date("November 07, 2014")
-        }, {
-            location: "Texas Roadhouse",
-            name: "Jason",
-            participants: "15",
-            date: new Date("October 31, 2014")
-        }, {
-            location: "Applebees",
-            name: "Melissa",
-            participants: "12",
-            date: new Date("October 24, 2014")
-        }, {
-            location: "5 Guys Burgers and Fries",
-            name: "Justin",
-            participants: "14",
-            date: new Date("October 17, 2014")
-        }, {
-            location: "Olive Garden",
-            name: "Melissa",
-            participants: "12",
-            date: new Date("October 10, 2014")
-        }, {
-            location: "Wild Mustang",
-            name: "Jordan",
-            participants: "13",
-            date: new Date("October 03, 2014")
-        }, {
-            location: "Texas Roadhouse",
-            name: "Summer",
-            participants: "14",
-            date: new Date("September 26, 2014")
-        }, {
-            location: "Golden Corral",
-            name: "Brad",
-            participants: "18",
-            date: new Date("September 19, 2014")
-        }, {
-            location: "California Pizza Kitchen",
-            name: "Josh",
-            participants: "9",
-            date: new Date("September 12, 2014")
-        }, {
-            location: "iHop",
-            name: "Elissa",
-            participants: "11",
-            date: new Date("September 05, 2014")
-        }, {
-            location: "Red Robin",
-            name: "Ben",
-            participants: "15",
-            date: new Date("August 29, 2014")
-        }, {
-            location: "Noodles and Company",
-            name: "Danny",
-            participants: "18",
-            date: new Date("August 22, 2014")
-        }, {
-            location: "Smash Burger",
-            name: "Danny",
-            participants: "15",
-            date: new Date("August 15, 2014")
-        }, {
-            location: "otihcnaR iM",
-            name: "Danny",
-            participants: "16",
-            date: new Date("August 08, 2014")
-        }, {
-            location: "Chilis",
-            name: "Katie",
-            participants: "10",
-            date: new Date("August 01, 2014")
-        }, {
-            location: "Red Lobster",
-            name: "Melissa",
-            participants: "9",
-            date: new Date("July 25, 2014")
-        }, {
-            location: "Ruby River",
-            name: "Ben",
-            participants: "16",
-            date: new Date("July 18, 2014")
-        }, {
-            location: "Goodwood",
-            name: "Alison",
-            participants: "15",
-            date: new Date("July 11, 2014")
-        }, {
-            location: "sizzlers",
-            name: "Melissa",
-            participants: "7",
-            date: new Date("July 03, 2014")
-        }, {
-            location: "5 Guys Burgers and Fries",
-            name: "Ben",
-            participants: "11",
-            date: new Date("June 27, 2014")
-        }, {
-            location: "Olive Garden",
-            name: "Tim",
-            participants: "9",
-            date: new Date("June 20, 2014")
-        }, {
-            location: "Wallabys",
-            name: "Austin",
-            participants: "10",
-            date: new Date("June 13, 2014")
-        }, {
-            location: "Red Robin",
-            name: "Ben",
-            participants: "13",
-            date: new Date("June 06, 2014")
-        }, {
-            location: "Texas Road House",
-            name: "Danny",
-            participants: "8",
-            date: new Date("May 30, 2014")
-        }, {
-            location: "Mi Ranchito",
-            name: "Elissa",
-            participants: "12",
-            date: new Date("May 23, 2014")
-        }, {
-            location: "Wild Mustang",
-            name: "Summer",
-            participants: "9",
-            date: new Date("May 16, 2014")
-        }, {
-            location: "Red Robin",
-            name: "Andy",
-            participants: "12",
-            date: new Date("May 09, 2014")
-        }, {
-            location: "Goodwood",
-            name: "Jacob",
-            participants: "10",
-            date: new Date("May 02, 2014")
-        }, {
-            location: "Noodles and Co",
-            name: "Melissa",
-            participants: "16",
-            date: new Date("April 25, 2014")
-        }, {
-            location: "Texas Road House",
-            name: "Elyse",
-            participants: "10",
-            date: new Date("April 18, 2014")
-        }, {
-            location: "Red Robin",
-            name: "Jordan",
-            participants: "14",
-            date: new Date("April 11, 2014")
-        }, {
-            location: "5 Guys Burgers and Fries",
-            name: "Jacob",
-            participants: "14",
-            date: new Date("April 04, 2014")
-        }, {
-            location: "Goodwood",
-            name: "Austin",
-            participants: "13",
-            date: new Date("March 28, 2014")
-        }, {
-            location: "Mi Ranchito",
-            name: "Dan",
-            participants: "12",
-            date: new Date("March 21, 2014")
-        }, {
-            location: "Jasmine Thai",
-            name: "Danielle",
-            participants: "11",
-            date: new Date("March 14, 2014")
-        }, {
-            location: "Texas Road House",
-            name: "Melissa",
-            participants: "11",
-            date: new Date("March 07, 2014")
-        }, {
-            location: "Chilis",
-            name: "Ben",
-            participants: "8",
-            date: new Date("February 28, 2014")
-        }, {
-            location: "Olive Garden",
-            name: "Dan",
-            participants: "7",
-            date: new Date("February 21, 2014")
-        }, {
-            location: "Firehouse Subs",
-            name: "Austin",
-            participants: "8",
-            date: new Date("February 14, 2014")
-        }, {
-            location: "Texas Road House",
-            name: "Elyse",
-            participants: "2",
-            date: new Date("February 07, 2014")
-        }, {
-            location: "Pizza Pie Cafe",
-            name: "Michael",
-            participants: "10",
-            date: new Date("January 31, 2014")
-        }, {
-            location: "Red Robin",
-            name: "Jordan",
-            participants: "9",
-            date: new Date("January 24, 2014")
-        }, {
-            location: "Mi Ranchito",
-            name: "Dan",
-            participants: "6",
-            date: new Date("January 17, 2014")
-        }, {
-            location: "Zupas",
-            name: "Melissa",
-            participants: "8",
-            date: new Date("January 10, 2014")
-        }, {
-            location: "Mimis Cafe",
-            name: "Brett Hansen",
-            participants: "7",
-            date: new Date("January 03, 2014")
-        }, {
-            location: "Texas Road House",
-            name: "Danny",
-            participants: "6",
-            date: new Date("December 27, 2013")
-        }, {
-            location: "Noodles and Co",
-            name: "Jason",
-            participants: "9",
-            date: new Date("December 20, 2013")
-        }];
-        // Socket event handlers
-        socket.on('connect', function() {
-            $scope.setName();
+        $('#chatWindow').animate({
+            scrollTop: $('#chatWindow')[0].scrollHeight
         });
-        socket.on('locations', function(locationsArray) {
-            $scope.locations = locationsArray;
-            $scope.$apply();
-            $timeout(function() {
-                $('.combobox').combobox();
-            });
-        });
-        socket.on('message', function(msg) {
-            $scope.messages.push(msg);
-            $scope.$apply();
-            $('#chatWindow').animate({
-                scrollTop: $('#chatWindow')[0].scrollHeight
-            });
-        });
-        socket.on('roster', function(names) {
-            $scope.roster = names;
-            $scope.$apply();
-        });
-        socket.on('submissions', function(sub) {
-            $scope.submissions = sub;
-            $scope.$apply();
-        });
-        socket.on('winner', function(winner) {
-            $scope.winner = winner;
-            console.log(winner);
-            $scope.$apply();
-        });
-        // Scope actions
-        $scope.submitLocation = function() {
-            var sub = {
-                name: $scope.name,
-                location: $scope.location
-            };
-            socket.emit('submission', sub);
-            console.log("Submission sent: " + sub.location);
-        };
-        $scope.send = function send() {
-            console.log('Sending message:', $scope.text);
-            socket.emit('message', $scope.text);
-            $scope.text = '';
-            $('#chatWindow').animate({
-                scrollTop: $('#chatWindow')[0].scrollHeight
-            });
-        };
-        $scope.setName = function setName() {
-            localStorage["chat.name"] = $scope.user;
-            $scope.name = $scope.user;
-            socket.emit('identify', $scope.user);
-        };
-        $scope.signOut = function signOut() {
-          gapi.auth.signOut();
-          $scope.user = null;
-          document.getElementById('signinButton').setAttribute('style', 'display: default');
-          console.log("Sign Out Button Clicked");
-        };
-        $scope.$watch('user', function(newVal, oldVal){
-            localStorage["chat.name"] = $scope.user;
-            socket.emit('identify', $scope.user);
-            console.log(newVal, oldVal);
-        });
+    };
+    $scope.setName = function setName() {
+        //change this function
+        socket.emit('identify', $scope.user.display_name);
+    };
+    $scope.signOut = function signOut() {
+        gapi.auth.signOut();
+        $scope.user = null;
+        $scope.signInState = false;
+        document.getElementById('signinButton').setAttribute('style', 'float: right');
+        console.log("Sign Out Button Clicked");
+    };
+    $scope.$watch('user.display_name', function(newVal, oldVal) {
+        localStorage["chat.name"] = $scope.user.display_name;
+        socket.emit('identify', $scope.user.first_name);
+    });
+    if ($scope.IsFriday) {
+        window.setInterval(function() {
+            $('#cd').html((new Date()).toLocaleTimeString());
+        }, 1000);
     }
-]);
+    $scope.getDayName = function() {
+        var weekday = new Array(7);
+        weekday[0] = "Sunday";
+        weekday[1] = "Monday";
+        weekday[2] = "Tuesday";
+        weekday[3] = "Wednesday";
+        weekday[4] = "Thursday";
+        weekday[5] = "Friday";
+        weekday[6] = "Saturday";
+        return weekday[(new Date()).getDay()];
+    };
+    $scope.countDown = function() {
+        var dayOfWeek = 5;
+        var hour = 10;
+        var minutes = 55;
+        var seconds = 0;
+        var daysLeft = dayOfWeek - (new Date().getDay());
+        var hoursLeft = hour - (new Date().getHours());
+        var minutesLeft = minutes - (new Date().getMinutes());
+        var secondsLeft = seconds - (new Date().getSeconds());
+        if (secondsLeft < 0) {
+            secondsLeft += 60;
+            minutesLeft--;
+        }
+        if (minutesLeft < 0) {
+            minutesLeft += 60;
+            hoursLeft--;
+        }
+        if (hoursLeft < 0) {
+            hoursLeft += 24;
+            daysLeft--;
+        }
+        if (daysLeft < 0) {
+            daysLeft += 7;
+        }
+        return {
+            days: daysLeft,
+            hours: hoursLeft,
+            minutes: minutesLeft,
+            seconds: secondsLeft
+        };
+    };
+    $interval(function() {
+        var cd = $scope.countDown();
+        $scope.countD = "";
+        if (cd.days !== 0) {
+            if (cd.days === 1)
+                $scope.countD = cd.days + " day and ";
+            else
+                $scope.countD = cd.days + " days and ";
+        }
+        if (cd.hours !== 0) {
+            if (cd.hours === 1)
+                $scope.countD += cd.hours + " hour";
+            else
+                $scope.countD += cd.hours + " hours";
+        }
+        if (cd.minutes !== 0) {
+            if (cd.minutes === 1)
+                $scope.countD += " and " + cd.minutes + " minute";
+            else
+                $scope.countD += " and " + cd.minutes + " minutes";
+        }
+        if (cd.seconds !== 0) {
+            if (cd.seconds === 1)
+                $scope.countD += " and " + cd.seconds + " second";
+            else
+                $scope.countD += " and " + cd.seconds + " seconds";
+        }
+    }, 1000);
+    $scope.checkAdmin = function() {
+        if ($scope.user.display_name == "Michael Malone" || $scope.user.display_name == "Chad Rasmussen") {
+            return true;
+        }
+        else {
+            return false;
+        }
+    };
+    $scope.flagItem = function(sub) {
+        console.log(sub);
+        if (sub.color == undefined) {
+            sub.color = "black";
+        }
+        if (sub.color == "black") {
+            $(this).addClass('text-warning');
+            sub.color = "red";
+        }
+        else if (sub.color == "red") {
+            $(this).addClass('text-success');
+            sub.color = "green";
+        }
+        else if (sub.color == "green") {
+            $(this).removeClass('text-success');
+            sub.color = "black";
+        }
+    };
+    $scope.newLocation = function() {
+        var n = document.getElementById("newLocationName").innerHTML;
+        var p = document.getElementById("newLocationPhone").innerHTML;
+        if (n === "" | p === "") {
+            alert("Please fill out both Name and Phone spaces");
+        }
+        var location = {
+            "name": n,
+            "phone": p
+        };
+        //console.log(location);
+        socket.emit('addLocation', location);
+        //addLocation(location);
+    };
+    $scope.deleteLocation = function() {
+        console.log("deleteLocation called");
+    };
+    $scope.updateLocation = function() {
+        console.log("updateLocation called");
+    };
+    $scope.addToolTip = function() {
+        $('[data-toggle="tooltip"]').tooltip();
+    };
+    $scope.getImageNbr();
+}]);

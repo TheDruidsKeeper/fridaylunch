@@ -27,3 +27,24 @@
   height: 400px;
   overflow: scroll;
 }
+.bottomCorner{
+    position:fixed;
+    bottom:0;
+    left:0;
+}
+.glyphicon.glyphicon-briefcase {
+    font-size: 40px;
+    padding-left: 30px;
+}
+.color-blue{
+  color: #337ab7;
+}
+.color-black{
+  color: #333;
+}
+.color-red{
+  color: #d43f3a;
+}
+.glyphicon-flag{
+  font-size: 25px;
+}

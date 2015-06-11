@@ -3495,7 +3495,7 @@ tbody.collapse.in {
 }
 .input-group .form-control {
   position: relative;
-  z-index: 2;
+  z-index: 0;
   float: left;
   width: 100%;
   margin-bottom: 0;
@@ -5521,6 +5521,7 @@ button.close {
   top: 0;
   right: 0;
   left: 0;
+  
   background-color: #000;
 }
 .modal-backdrop.fade {
@@ -5545,7 +5546,6 @@ button.close {
 }
 .modal-body {
   position: relative;
-  padding: 15px;
 }
 .modal-footer {
   padding: 15px;
